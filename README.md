@@ -10,6 +10,18 @@ Stores tickets as markdown files with YAML frontmatter in `.tickets/`. Designed 
 go install github.com/kostyay/kticket/cmd/kt@latest
 ```
 
+## AI Agent Setup
+
+Add to your project's `CLAUDE.md`:
+
+```markdown
+## Task Tracking (kt)
+- `kt help` for CLI reference
+- Structure: epic > task > subtask (keep subtasks atomic)
+- Start work: `kt ready` → pick top, execute, update status
+- Creating: break features into testable chunks (`kt create "title" -d "description" --parent <epic-id>`)
+```
+
 ## Quick Start
 
 ```sh
@@ -155,6 +167,10 @@ IDs are generated from the project directory name:
 - `foo-bar-baz` → `fbb-xxxx`
 
 Partial ID matching is supported: `kt show a1b2` matches `kt-a1b2c3d4`.
+
+## Inspired By
+
+[beads](https://github.com/steveyegge/beads) by Steve Yegge
 
 ## License
 
