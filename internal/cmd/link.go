@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 
+	"github.com/kostyay/kticket/internal/store"
 	"github.com/kostyay/kticket/internal/ticket"
 	"github.com/spf13/cobra"
 )
@@ -33,77 +35,115 @@ func init() {
 }
 
 func runLinkAdd(cmd *cobra.Command, args []string) error {
-	// Resolve all tickets first
-	tickets := make([]*ticket.Ticket, 0, len(args))
+	// Resolve all ticket IDs first (read-only) to get canonical IDs
+	ids := make([]string, 0, len(args))
 	for _, id := range args {
 		t, err := Store.Resolve(id)
 		if err != nil {
 			return err
 		}
-		tickets = append(tickets, t)
+		ids = append(ids, t.ID)
+	}
+
+	// Sort IDs to prevent deadlocks when locking multiple tickets
+	sort.Strings(ids)
+
+	// Lock all tickets in sorted order
+	locked := make([]*store.LockedTicket, 0, len(ids))
+	defer func() {
+		for _, lt := range locked {
+			lt.Release()
+		}
+	}()
+
+	for _, id := range ids {
+		lt, err := Store.GetForUpdate(id)
+		if err != nil {
+			return err
+		}
+		locked = append(locked, lt)
 	}
 
 	// Add symmetric links between all pairs
-	for i, t1 := range tickets {
-		for j, t2 := range tickets {
+	for i, lt1 := range locked {
+		for j, lt2 := range locked {
 			if i == j {
 				continue
 			}
-			// Add t2 to t1's links if not already there
-			if !containsString(t1.Links, t2.ID) {
-				t1.Links = append(t1.Links, t2.ID)
+			// Add lt2 to lt1's links if not already there
+			if !containsString(lt1.Ticket.Links, lt2.Ticket.ID) {
+				lt1.Ticket.Links = append(lt1.Ticket.Links, lt2.Ticket.ID)
 			}
 		}
 	}
 
-	// Save all
-	for _, t := range tickets {
-		if err := Store.Save(t); err != nil {
+	// Save all (keep locks until all saves complete)
+	tickets := make([]*ticket.Ticket, 0, len(locked))
+	for _, lt := range locked {
+		if err := lt.SaveAndRelease(); err != nil {
 			return err
 		}
+		tickets = append(tickets, lt.Ticket)
 	}
+	locked = nil // Already released
 
 	if IsJSON() {
 		return PrintJSON(tickets)
 	}
 
-	ids := make([]string, len(tickets))
+	resultIDs := make([]string, len(tickets))
 	for i, t := range tickets {
-		ids[i] = t.ID
+		resultIDs[i] = t.ID
 	}
-	fmt.Printf("Linked: %v\n", ids)
+	fmt.Printf("Linked: %v\n", resultIDs)
 	return nil
 }
 
 func runLinkRm(cmd *cobra.Command, args []string) error {
+	// Resolve IDs first (read-only)
 	t1, err := Store.Resolve(args[0])
 	if err != nil {
 		return err
 	}
-
 	t2, err := Store.Resolve(args[1])
 	if err != nil {
 		return err
 	}
 
-	// Remove from both directions
-	t1.Links = removeString(t1.Links, t2.ID)
-	t2.Links = removeString(t2.Links, t1.ID)
+	// Sort IDs to prevent deadlocks
+	ids := []string{t1.ID, t2.ID}
+	sort.Strings(ids)
 
-	if err := Store.Save(t1); err != nil {
+	// Lock both tickets in sorted order
+	lt1, err := Store.GetForUpdate(ids[0])
+	if err != nil {
 		return err
 	}
-	if err := Store.Save(t2); err != nil {
+	lt2, err := Store.GetForUpdate(ids[1])
+	if err != nil {
+		lt1.Release()
+		return err
+	}
+
+	// Remove from both directions
+	lt1.Ticket.Links = removeString(lt1.Ticket.Links, lt2.Ticket.ID)
+	lt2.Ticket.Links = removeString(lt2.Ticket.Links, lt1.Ticket.ID)
+
+	if err := lt1.SaveAndRelease(); err != nil {
+		lt2.Release()
+		return err
+	}
+	if err := lt2.SaveAndRelease(); err != nil {
 		return err
 	}
 
 	if IsJSON() {
 		return PrintJSON(map[string]any{
-			"unlinked": []string{t1.ID, t2.ID},
+			"unlinked": []string{ids[0], ids[1]},
 		})
 	}
 
-	fmt.Printf("Unlinked %s and %s\n", t1.ID, t2.ID)
+	fmt.Printf("Unlinked %s and %s\n", ids[0], ids[1])
 	return nil
 }
 

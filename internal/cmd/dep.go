@@ -45,51 +45,56 @@ func init() {
 }
 
 func runDepAdd(cmd *cobra.Command, args []string) error {
-	t, err := Store.Resolve(args[0])
+	// Resolve dep ticket first (read-only) to validate it exists
+	depTicket, err := Store.Resolve(args[1])
 	if err != nil {
 		return err
 	}
 
-	depTicket, err := Store.Resolve(args[1])
+	// Lock the ticket we're modifying
+	lt, err := Store.ResolveForUpdate(args[0])
 	if err != nil {
 		return err
 	}
 
 	// Check if already exists
-	for _, d := range t.Deps {
+	for _, d := range lt.Ticket.Deps {
 		if d == depTicket.ID {
-			return fmt.Errorf("%s already depends on %s", t.ID, depTicket.ID)
+			lt.Release()
+			return fmt.Errorf("%s already depends on %s", lt.Ticket.ID, depTicket.ID)
 		}
 	}
 
-	t.Deps = append(t.Deps, depTicket.ID)
-	if err := Store.Save(t); err != nil {
+	lt.Ticket.Deps = append(lt.Ticket.Deps, depTicket.ID)
+	if err := lt.SaveAndRelease(); err != nil {
 		return err
 	}
 
 	if IsJSON() {
-		return PrintJSON(t)
+		return PrintJSON(lt.Ticket)
 	}
 
-	fmt.Printf("%s now depends on %s\n", t.ID, depTicket.ID)
+	fmt.Printf("%s now depends on %s\n", lt.Ticket.ID, depTicket.ID)
 	return nil
 }
 
 func runDepRm(cmd *cobra.Command, args []string) error {
-	t, err := Store.Resolve(args[0])
+	// Resolve dep ticket first (read-only) to validate it exists
+	depTicket, err := Store.Resolve(args[1])
 	if err != nil {
 		return err
 	}
 
-	depTicket, err := Store.Resolve(args[1])
+	// Lock the ticket we're modifying
+	lt, err := Store.ResolveForUpdate(args[0])
 	if err != nil {
 		return err
 	}
 
 	// Find and remove
 	found := false
-	newDeps := make([]string, 0, len(t.Deps))
-	for _, d := range t.Deps {
+	newDeps := make([]string, 0, len(lt.Ticket.Deps))
+	for _, d := range lt.Ticket.Deps {
 		if d == depTicket.ID {
 			found = true
 			continue
@@ -98,19 +103,20 @@ func runDepRm(cmd *cobra.Command, args []string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("%s does not depend on %s", t.ID, depTicket.ID)
+		lt.Release()
+		return fmt.Errorf("%s does not depend on %s", lt.Ticket.ID, depTicket.ID)
 	}
 
-	t.Deps = newDeps
-	if err := Store.Save(t); err != nil {
+	lt.Ticket.Deps = newDeps
+	if err := lt.SaveAndRelease(); err != nil {
 		return err
 	}
 
 	if IsJSON() {
-		return PrintJSON(t)
+		return PrintJSON(lt.Ticket)
 	}
 
-	fmt.Printf("%s no longer depends on %s\n", t.ID, depTicket.ID)
+	fmt.Printf("%s no longer depends on %s\n", lt.Ticket.ID, depTicket.ID)
 	return nil
 }
 

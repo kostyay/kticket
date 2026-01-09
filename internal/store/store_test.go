@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/kostyay/kticket/internal/ticket"
@@ -189,4 +190,261 @@ func TestStoreGetNotFound(t *testing.T) {
 
 	_, err := s.Get("nonexistent")
 	require.Error(t, err)
+}
+
+func TestGetForUpdate(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-update", "Update Test", ticket.StatusOpen)
+
+	// Get for update
+	lt, err := s.GetForUpdate("kt-update")
+	require.NoError(t, err)
+	require.NotNil(t, lt)
+	assert.Equal(t, "kt-update", lt.Ticket.ID)
+
+	// Modify and save
+	lt.Ticket.Status = ticket.StatusInProgress
+	err = lt.SaveAndRelease()
+	require.NoError(t, err)
+
+	// Verify saved
+	updated, err := s.Get("kt-update")
+	require.NoError(t, err)
+	assert.Equal(t, ticket.StatusInProgress, updated.Status)
+}
+
+func TestGetForUpdateRelease(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-release", "Release Test", ticket.StatusOpen)
+
+	// Get for update
+	lt, err := s.GetForUpdate("kt-release")
+	require.NoError(t, err)
+
+	// Modify but release without saving
+	lt.Ticket.Status = ticket.StatusClosed
+	lt.Release()
+
+	// Original should be unchanged
+	original, err := s.Get("kt-release")
+	require.NoError(t, err)
+	assert.Equal(t, ticket.StatusOpen, original.Status)
+}
+
+func TestGetForUpdateNotFound(t *testing.T) {
+	s := setupTestStore(t)
+	_ = s.EnsureDir()
+
+	_, err := s.GetForUpdate("nonexistent")
+	require.Error(t, err)
+}
+
+func TestResolveForUpdate(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-abc123", "Resolve Test", ticket.StatusOpen)
+
+	// Resolve by partial ID
+	lt, err := s.ResolveForUpdate("abc12")
+	require.NoError(t, err)
+	assert.Equal(t, "kt-abc123", lt.Ticket.ID)
+
+	lt.Ticket.Priority = 5
+	err = lt.SaveAndRelease()
+	require.NoError(t, err)
+
+	// Verify
+	updated, err := s.Get("kt-abc123")
+	require.NoError(t, err)
+	assert.Equal(t, 5, updated.Priority)
+}
+
+func TestUpdate(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-atomic", "Atomic Test", ticket.StatusOpen)
+
+	// Atomic update
+	err := s.Update("kt-atomic", func(tk *ticket.Ticket) error {
+		tk.Status = ticket.StatusClosed
+		tk.TestsPassed = true
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Verify
+	updated, err := s.Get("kt-atomic")
+	require.NoError(t, err)
+	assert.Equal(t, ticket.StatusClosed, updated.Status)
+	assert.True(t, updated.TestsPassed)
+}
+
+func TestUpdateError(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-err", "Error Test", ticket.StatusOpen)
+
+	// Update that returns error
+	err := s.Update("kt-err", func(tk *ticket.Ticket) error {
+		tk.Status = ticket.StatusClosed
+		return assert.AnError
+	})
+	require.Error(t, err)
+
+	// Should not have saved
+	unchanged, err := s.Get("kt-err")
+	require.NoError(t, err)
+	assert.Equal(t, ticket.StatusOpen, unchanged.Status)
+}
+
+func TestLockedTicketDoubleRelease(t *testing.T) {
+	s := setupTestStore(t)
+	createTestTicket(s, "kt-double", "Double Release", ticket.StatusOpen)
+
+	lt, err := s.GetForUpdate("kt-double")
+	require.NoError(t, err)
+
+	// First release
+	lt.Release()
+
+	// Second release should be safe (no-op)
+	lt.Release()
+
+	// SaveAndRelease after Release should error
+	err = lt.SaveAndRelease()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already released")
+}
+
+func TestConcurrentUpdates(t *testing.T) {
+	s := setupTestStore(t)
+
+	// Create ticket with priority 0
+	tk := &ticket.Ticket{
+		ID:       "kt-concurrent",
+		Status:   ticket.StatusOpen,
+		Created:  "2026-01-09T10:00:00Z",
+		Type:     ticket.TypeTask,
+		Priority: 0,
+		Title:    "Concurrent Test",
+	}
+	require.NoError(t, s.Save(tk))
+
+	// 10 goroutines each increment priority by 1
+	const goroutines = 10
+	var wg sync.WaitGroup
+
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			err := s.Update("kt-concurrent", func(tk *ticket.Ticket) error {
+				tk.Priority++
+				return nil
+			})
+			require.NoError(t, err)
+		}()
+	}
+
+	wg.Wait()
+
+	// Final priority should be exactly 10 (no lost updates)
+	final, err := s.Get("kt-concurrent")
+	require.NoError(t, err)
+	assert.Equal(t, goroutines, final.Priority)
+}
+
+func TestConcurrentGetForUpdate(t *testing.T) {
+	s := setupTestStore(t)
+
+	// Create ticket
+	tk := &ticket.Ticket{
+		ID:       "kt-gfu",
+		Status:   ticket.StatusOpen,
+		Created:  "2026-01-09T10:00:00Z",
+		Type:     ticket.TypeTask,
+		Priority: 0,
+		Title:    "GetForUpdate Concurrent",
+	}
+	require.NoError(t, s.Save(tk))
+
+	const goroutines = 5
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	values := make([]int, 0, goroutines)
+
+	for i := range goroutines {
+		wg.Add(1)
+		go func(val int) {
+			defer wg.Done()
+
+			lt, err := s.GetForUpdate("kt-gfu")
+			require.NoError(t, err)
+
+			// Record what we read
+			mu.Lock()
+			values = append(values, lt.Ticket.Priority)
+			mu.Unlock()
+
+			// Increment and save
+			lt.Ticket.Priority = val + 1
+			err = lt.SaveAndRelease()
+			require.NoError(t, err)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// All should have completed
+	assert.Len(t, values, goroutines)
+}
+
+func TestConcurrentReadWrite(t *testing.T) {
+	s := setupTestStore(t)
+
+	tk := &ticket.Ticket{
+		ID:       "kt-rw",
+		Status:   ticket.StatusOpen,
+		Created:  "2026-01-09T10:00:00Z",
+		Type:     ticket.TypeTask,
+		Priority: 0,
+		Title:    "Read Write Concurrent",
+	}
+	require.NoError(t, s.Save(tk))
+
+	const readers = 5
+	const writers = 3
+	var wg sync.WaitGroup
+
+	// Start readers
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 10 {
+				_, err := s.Get("kt-rw")
+				require.NoError(t, err)
+			}
+		}()
+	}
+
+	// Start writers
+	for range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 5 {
+				err := s.Update("kt-rw", func(tk *ticket.Ticket) error {
+					tk.Priority++
+					return nil
+				})
+				require.NoError(t, err)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify final state
+	final, err := s.Get("kt-rw")
+	require.NoError(t, err)
+	assert.Equal(t, writers*5, final.Priority)
 }

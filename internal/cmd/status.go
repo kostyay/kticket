@@ -73,23 +73,23 @@ func runReopen(cmd *cobra.Command, args []string) error {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	t, err := Store.Resolve(args[0])
+	lt, err := Store.ResolveForUpdate(args[0])
 	if err != nil {
 		return err
 	}
 
 	newStatus := ticket.Status(args[1])
-	t.Status = newStatus
+	lt.Ticket.Status = newStatus
 
-	if err := Store.Save(t); err != nil {
+	if err := lt.SaveAndRelease(); err != nil {
 		return err
 	}
 
 	if IsJSON() {
-		return PrintJSON(t)
+		return PrintJSON(lt.Ticket)
 	}
 
-	fmt.Printf("%s → %s\n", t.ID, t.Status)
+	fmt.Printf("%s → %s\n", lt.Ticket.ID, lt.Ticket.Status)
 	return nil
 }
 
@@ -97,19 +97,19 @@ func runPass(cmd *cobra.Command, args []string) error {
 	result := statusResult{}
 
 	for _, id := range args {
-		t, err := Store.Resolve(id)
+		lt, err := Store.ResolveForUpdate(id)
 		if err != nil {
 			result.Errors = append(result.Errors, statusError{ID: id, Error: err.Error()})
 			continue
 		}
 
-		t.TestsPassed = true
-		if err := Store.Save(t); err != nil {
-			result.Errors = append(result.Errors, statusError{ID: t.ID, Error: err.Error()})
+		lt.Ticket.TestsPassed = true
+		if err := lt.SaveAndRelease(); err != nil {
+			result.Errors = append(result.Errors, statusError{ID: lt.Ticket.ID, Error: err.Error()})
 			continue
 		}
 
-		result.Updated = append(result.Updated, t.ID)
+		result.Updated = append(result.Updated, lt.Ticket.ID)
 	}
 
 	if IsJSON() {
@@ -130,26 +130,27 @@ func setStatusMultiple(ids []string, status ticket.Status, validateClose bool) e
 	result := statusResult{}
 
 	for _, id := range ids {
-		t, err := Store.Resolve(id)
+		lt, err := Store.ResolveForUpdate(id)
 		if err != nil {
 			result.Errors = append(result.Errors, statusError{ID: id, Error: err.Error()})
 			continue
 		}
 
 		if validateClose && status == ticket.StatusClosed {
-			if err := t.CanClose(); err != nil {
-				result.Errors = append(result.Errors, statusError{ID: t.ID, Error: err.Error()})
+			if err := lt.Ticket.CanClose(); err != nil {
+				lt.Release()
+				result.Errors = append(result.Errors, statusError{ID: lt.Ticket.ID, Error: err.Error()})
 				continue
 			}
 		}
 
-		t.Status = status
-		if err := Store.Save(t); err != nil {
-			result.Errors = append(result.Errors, statusError{ID: t.ID, Error: err.Error()})
+		lt.Ticket.Status = status
+		if err := lt.SaveAndRelease(); err != nil {
+			result.Errors = append(result.Errors, statusError{ID: lt.Ticket.ID, Error: err.Error()})
 			continue
 		}
 
-		result.Updated = append(result.Updated, t.ID)
+		result.Updated = append(result.Updated, lt.Ticket.ID)
 	}
 
 	if IsJSON() {
