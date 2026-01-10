@@ -109,12 +109,18 @@ func TryAcquireShared(path string) (*Lock, error) {
 	return &Lock{flock: fl, shared: true}, nil
 }
 
-// Release releases the lock.
+// Release releases the lock and removes the lock file.
 func (l *Lock) Release() error {
 	if l == nil || l.flock == nil {
 		return nil
 	}
-	return l.flock.Unlock()
+	path := l.flock.Path()
+	if err := l.flock.Unlock(); err != nil {
+		return err
+	}
+	// Best-effort cleanup; ignore errors (file may already be gone or re-locked)
+	os.Remove(path)
+	return nil
 }
 
 // Path returns the lock file path.

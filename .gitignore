@@ -33,3 +33,6 @@ go.work.sum
 
 # Claude Code local settings
 .claude/
+
+# ktickets lock files
+.ktickets/.locks/
