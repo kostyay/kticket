@@ -46,7 +46,7 @@ var installCmd = &cobra.Command{
 
 		// Install slash commands
 		globalDir := getClaudeConfigDir()
-		cmdChoice := promptChoice(reader, "Install slash commands (/kt-create, /kt-run)?", []string{
+		cmdChoice := promptChoice(reader, "Install slash commands (/kt-create, /kt-run, /kt-run-all)?", []string{
 			fmt.Sprintf("Global (%s/commands/)", globalDir),
 			"Project (.claude/commands/)",
 			"Skip",
@@ -138,7 +138,7 @@ func installSlashCommands(global bool) error {
 		return fmt.Errorf("create commands directory: %w", err)
 	}
 
-	commands := []string{"kt-create.md", "kt-run.md"}
+	commands := []string{"kt-create.md", "kt-run.md", "kt-run-all.md"}
 	for _, cmd := range commands {
 		content, err := templatesFS.ReadFile("templates/" + cmd)
 		if err != nil {
@@ -154,7 +154,7 @@ func installSlashCommands(global bool) error {
 	if global {
 		scope = "global"
 	}
-	fmt.Printf("Installed /kt-create, /kt-run (%s)\n", scope)
+	fmt.Printf("Installed /kt-create, /kt-run, /kt-run-all (%s)\n", scope)
 	return nil
 }
 
