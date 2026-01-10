@@ -45,8 +45,9 @@ var installCmd = &cobra.Command{
 		}
 
 		// Install slash commands
+		globalDir := getClaudeConfigDir()
 		cmdChoice := promptChoice(reader, "Install slash commands (/kt-create, /kt-run)?", []string{
-			"Global (~/.claude/commands/)",
+			fmt.Sprintf("Global (%s/commands/)", globalDir),
 			"Project (.claude/commands/)",
 			"Skip",
 		})
@@ -59,7 +60,7 @@ var installCmd = &cobra.Command{
 
 		// Install kt permission
 		permChoice := promptChoice(reader, "Add kt permission (allows Claude to run kt commands without prompting)?", []string{
-			"Global (~/.claude/settings.json)",
+			fmt.Sprintf("Global (%s/settings.json)", globalDir),
 			"Project (.claude/settings.local.json)",
 			"Skip",
 		})
