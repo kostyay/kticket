@@ -17,10 +17,12 @@ var listCmd = &cobra.Command{
 
 var (
 	listStatus string
+	listParent string
 )
 
 func init() {
 	listCmd.Flags().StringVar(&listStatus, "status", "", "Filter by status (open|in_progress|closed)")
+	listCmd.Flags().StringVar(&listParent, "parent", "", "Filter by parent ticket ID")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -28,6 +30,21 @@ func runList(cmd *cobra.Command, args []string) error {
 	tickets, err := Store.List()
 	if err != nil {
 		return err
+	}
+
+	// Filter by parent if specified
+	if listParent != "" {
+		parent, err := Store.Resolve(listParent)
+		if err != nil {
+			return err
+		}
+		filtered := make([]*ticket.Ticket, 0)
+		for _, t := range tickets {
+			if t.Parent == parent.ID {
+				filtered = append(filtered, t)
+			}
+		}
+		tickets = filtered
 	}
 
 	// Filter by status if specified
@@ -43,6 +60,13 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if IsJSON() {
 		return PrintJSON(tickets)
+	}
+
+	if IsPlain() {
+		for _, t := range tickets {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
 	}
 
 	for _, t := range tickets {
@@ -147,6 +171,13 @@ func runClosed(cmd *cobra.Command, args []string) error {
 
 	if IsJSON() {
 		return PrintJSON(closed)
+	}
+
+	if IsPlain() {
+		for _, t := range closed {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
 	}
 
 	for _, t := range closed {

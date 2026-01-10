@@ -205,6 +205,13 @@ func runReady(cmd *cobra.Command, args []string) error {
 		return PrintJSON(ready)
 	}
 
+	if IsPlain() {
+		for _, t := range ready {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
+	}
+
 	for _, t := range ready {
 		fmt.Printf("%-12s [%-11s] %s\n", t.ID, t.Status, truncate(t.Title, 50))
 	}
@@ -230,6 +237,13 @@ func runBlocked(cmd *cobra.Command, args []string) error {
 
 	if IsJSON() {
 		return PrintJSON(blocked)
+	}
+
+	if IsPlain() {
+		for _, t := range blocked {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
 	}
 
 	for _, t := range blocked {
