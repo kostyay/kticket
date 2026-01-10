@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kostyay/kticket/internal/store"
@@ -1323,7 +1326,7 @@ func TestRegisterKtPermission_FileNotExist(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/nonexistent.json"
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should be created with permission
@@ -1341,7 +1344,7 @@ func TestRegisterKtPermission_InvalidJSON(t *testing.T) {
 	path := dir + "/settings.json"
 	require.NoError(t, os.WriteFile(path, []byte("not json"), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse settings")
 }
@@ -1350,7 +1353,7 @@ func TestRegisterKtPermission_CreatesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/.claude/settings.local.json"
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// Directory and file should be created
@@ -1369,7 +1372,7 @@ func TestRegisterKtPermission_NoPermissionsSection(t *testing.T) {
 	data := `{"other": "value"}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have permissions.allow created
@@ -1388,7 +1391,7 @@ func TestRegisterKtPermission_NoAllowArray(t *testing.T) {
 	data := `{"permissions": {"deny": ["something"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have allow array created
@@ -1408,7 +1411,7 @@ func TestRegisterKtPermission_AlreadyExists(t *testing.T) {
 	data := `{"permissions": {"allow": ["Bash(kt:*)", "Other"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err) // Should skip if already exists
 
 	// File should be unchanged (except formatting)
@@ -1426,7 +1429,7 @@ func TestRegisterKtPermission_AddsPermission(t *testing.T) {
 	data := `{"permissions": {"allow": ["Other"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have new permission
@@ -1446,7 +1449,7 @@ func TestRegisterKtPermission_EmptyAllowArray(t *testing.T) {
 	data := `{"permissions": {"allow": []}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have new permission
@@ -1465,7 +1468,7 @@ func TestRegisterKtPermission_PreservesOtherSettings(t *testing.T) {
 	data := `{"mcpServers": {"test": {}}, "permissions": {"allow": [], "deny": ["Bad"]}, "other": 123}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// Check all settings preserved
@@ -1480,4 +1483,86 @@ func TestRegisterKtPermission_PreservesOtherSettings(t *testing.T) {
 	perms := parsed["permissions"].(map[string]any)
 	deny := perms["deny"].([]any)
 	assert.Contains(t, deny, "Bad")
+}
+
+func TestGetClaudeConfigDir_Default(t *testing.T) {
+	// Unset env var
+	os.Unsetenv("CLAUDE_CONFIG_DIR")
+
+	dir := getClaudeConfigDir()
+	home, _ := os.UserHomeDir()
+	assert.Equal(t, filepath.Join(home, ".claude"), dir)
+}
+
+func TestGetClaudeConfigDir_EnvVar(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "/custom/path")
+
+	dir := getClaudeConfigDir()
+	assert.Equal(t, "/custom/path", dir)
+}
+
+func TestInstallSlashCommands_Project(t *testing.T) {
+	dir := t.TempDir()
+	oldWd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(oldWd)
+
+	err := installSlashCommands(false)
+	require.NoError(t, err)
+
+	// Check files created
+	_, err = os.Stat(filepath.Join(dir, ".claude/commands/kt-create.md"))
+	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, ".claude/commands/kt-run.md"))
+	assert.NoError(t, err)
+
+	// Check content
+	content, _ := os.ReadFile(filepath.Join(dir, ".claude/commands/kt-create.md"))
+	assert.Contains(t, string(content), "epic")
+	assert.Contains(t, string(content), "kt create")
+}
+
+func TestInstallSlashCommands_Global(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+
+	err := installSlashCommands(true)
+	require.NoError(t, err)
+
+	// Check files created in custom config dir
+	_, err = os.Stat(filepath.Join(dir, "commands/kt-create.md"))
+	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, "commands/kt-run.md"))
+	assert.NoError(t, err)
+}
+
+func TestWriteKtMd(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kt.md")
+
+	err := writeKtMd(path)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "kt - ticket tracker")
+	assert.Contains(t, string(content), "kt create")
+}
+
+func TestPromptChoice_ValidInput(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("2\n"))
+	choice := promptChoice(reader, "Pick one", []string{"A", "B", "C"})
+	assert.Equal(t, 2, choice)
+}
+
+func TestPromptChoice_InvalidInput(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("invalid\n"))
+	choice := promptChoice(reader, "Pick one", []string{"A", "B", "C"})
+	assert.Equal(t, 3, choice) // Defaults to last (Skip)
+}
+
+func TestPromptChoice_OutOfRange(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("5\n"))
+	choice := promptChoice(reader, "Pick one", []string{"A", "B", "C"})
+	assert.Equal(t, 3, choice) // Defaults to last
 }
