@@ -1323,7 +1323,7 @@ func TestRegisterKtPermission_FileNotExist(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/nonexistent.json"
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should be created with permission
@@ -1341,7 +1341,7 @@ func TestRegisterKtPermission_InvalidJSON(t *testing.T) {
 	path := dir + "/settings.json"
 	require.NoError(t, os.WriteFile(path, []byte("not json"), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse settings")
 }
@@ -1350,7 +1350,7 @@ func TestRegisterKtPermission_CreatesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/.claude/settings.local.json"
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// Directory and file should be created
@@ -1369,7 +1369,7 @@ func TestRegisterKtPermission_NoPermissionsSection(t *testing.T) {
 	data := `{"other": "value"}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have permissions.allow created
@@ -1388,7 +1388,7 @@ func TestRegisterKtPermission_NoAllowArray(t *testing.T) {
 	data := `{"permissions": {"deny": ["something"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have allow array created
@@ -1408,7 +1408,7 @@ func TestRegisterKtPermission_AlreadyExists(t *testing.T) {
 	data := `{"permissions": {"allow": ["Bash(kt:*)", "Other"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err) // Should skip if already exists
 
 	// File should be unchanged (except formatting)
@@ -1426,7 +1426,7 @@ func TestRegisterKtPermission_AddsPermission(t *testing.T) {
 	data := `{"permissions": {"allow": ["Other"]}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have new permission
@@ -1446,7 +1446,7 @@ func TestRegisterKtPermission_EmptyAllowArray(t *testing.T) {
 	data := `{"permissions": {"allow": []}}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// File should have new permission
@@ -1465,7 +1465,7 @@ func TestRegisterKtPermission_PreservesOtherSettings(t *testing.T) {
 	data := `{"mcpServers": {"test": {}}, "permissions": {"allow": [], "deny": ["Bad"]}, "other": 123}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
-	err := registerKtPermissionAt(path)
+	err := registerKtPermissionAt(path, false)
 	require.NoError(t, err)
 
 	// Check all settings preserved

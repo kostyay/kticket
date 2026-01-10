@@ -2,37 +2,24 @@ package cmd
 
 import (
 	"bufio"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/spf13/cobra"
 )
 
-const ktMdContent = `## kt - ticket tracker
-
-Tickets in ` + "`.ktickets/`" + ` (markdown+YAML). Hierarchy: epic>task>subtask.
-
-` + "```sh" + `
-kt create "title" -d "desc" --parent <id>  # -t bug|feature|task|epic|chore -p 0-4
-kt ls [--status=open] [--parent=<id>]      # or: kt ready, kt blocked
-kt show <id>                               # partial ID ok: a1b2 → kt-a1b2c3d4
-kt start|pass|close <id>                   # workflow transitions
-kt add-note <id> "text"
-kt dep add|rm|tree <id> [dep-id]
-kt link add|rm <id> <id>
-` + "```" + `
-
-Create flags: ` + "`--design --acceptance --tests --external-ref`" + `
-Output: JSON when piped/--json.
-`
+//go:embed templates/*
+var templatesFS embed.FS
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Create kt.md instructions file in current directory",
-	Long:  "Creates a kt.md file containing usage instructions for AI agents",
+	Short: "Install kt.md and Claude slash commands",
+	Long:  "Creates kt.md file and optionally installs Claude slash commands and permissions",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -40,25 +27,45 @@ var installCmd = &cobra.Command{
 		}
 
 		reader := bufio.NewReader(os.Stdin)
-		path := filepath.Join(cwd, "kt.md")
 
-		// Check if file exists
-		if _, err := os.Stat(path); err == nil {
+		// Install kt.md
+		ktMdPath := filepath.Join(cwd, "kt.md")
+		if _, err := os.Stat(ktMdPath); err == nil {
 			if !promptYesNo(reader, "kt.md already exists. Regenerate?") {
-				fmt.Println("Aborted")
-				return nil
+				fmt.Println("Skipped kt.md")
+			} else {
+				if err := writeKtMd(ktMdPath); err != nil {
+					return err
+				}
+			}
+		} else {
+			if err := writeKtMd(ktMdPath); err != nil {
+				return err
 			}
 		}
 
-		if err := os.WriteFile(path, []byte(ktMdContent), 0644); err != nil {
-			return fmt.Errorf("write kt.md: %w", err)
+		// Install slash commands
+		cmdChoice := promptChoice(reader, "Install slash commands (/kt-create, /kt-run)?", []string{
+			"Global (~/.claude/commands/)",
+			"Project (.claude/commands/)",
+			"Skip",
+		})
+		if cmdChoice != 3 {
+			global := cmdChoice == 1
+			if err := installSlashCommands(global); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+			}
 		}
 
-		fmt.Println("Created kt.md")
-
-		// Ask to register kt permission in Claude settings
-		if promptYesNo(reader, "Add kt permission to .claude/settings.local.json? (allows Claude to run kt commands without prompting)") {
-			if err := registerKtPermission(); err != nil {
+		// Install kt permission
+		permChoice := promptChoice(reader, "Add kt permission (allows Claude to run kt commands without prompting)?", []string{
+			"Global (~/.claude/settings.json)",
+			"Project (.claude/settings.local.json)",
+			"Skip",
+		})
+		if permChoice != 3 {
+			global := permChoice == 1
+			if err := registerKtPermission(global); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 			}
 		}
@@ -71,6 +78,19 @@ func init() {
 	rootCmd.AddCommand(installCmd)
 }
 
+// writeKtMd writes kt.md from embedded template.
+func writeKtMd(path string) error {
+	content, err := templatesFS.ReadFile("templates/kt.md")
+	if err != nil {
+		return fmt.Errorf("read template: %w", err)
+	}
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		return fmt.Errorf("write kt.md: %w", err)
+	}
+	fmt.Println("Created kt.md")
+	return nil
+}
+
 // promptYesNo asks a yes/no question and returns true if user answers yes.
 func promptYesNo(reader *bufio.Reader, prompt string) bool {
 	fmt.Print(prompt + " [y/N] ")
@@ -79,13 +99,77 @@ func promptYesNo(reader *bufio.Reader, prompt string) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// registerKtPermission adds "Bash(kt:*)" to .claude/settings.local.json if not present.
-func registerKtPermission() error {
-	return registerKtPermissionAt(".claude/settings.local.json")
+// promptChoice presents numbered options and returns 1-indexed selection.
+func promptChoice(reader *bufio.Reader, prompt string, options []string) int {
+	fmt.Println(prompt)
+	for i, opt := range options {
+		fmt.Printf("  %d. %s\n", i+1, opt)
+	}
+	fmt.Print("> ")
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(answer)
+	choice, err := strconv.Atoi(answer)
+	if err != nil || choice < 1 || choice > len(options) {
+		return len(options) // Default to last option (Skip)
+	}
+	return choice
+}
+
+// getClaudeConfigDir returns the Claude config directory, respecting CLAUDE_CONFIG_DIR env var.
+func getClaudeConfigDir() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude")
+}
+
+// installSlashCommands installs kt-create.md and kt-run.md commands.
+func installSlashCommands(global bool) error {
+	var commandsDir string
+	if global {
+		commandsDir = filepath.Join(getClaudeConfigDir(), "commands")
+	} else {
+		commandsDir = ".claude/commands"
+	}
+
+	if err := os.MkdirAll(commandsDir, 0755); err != nil {
+		return fmt.Errorf("create commands directory: %w", err)
+	}
+
+	commands := []string{"kt-create.md", "kt-run.md"}
+	for _, cmd := range commands {
+		content, err := templatesFS.ReadFile("templates/" + cmd)
+		if err != nil {
+			return fmt.Errorf("read template %s: %w", cmd, err)
+		}
+		path := filepath.Join(commandsDir, cmd)
+		if err := os.WriteFile(path, content, 0644); err != nil {
+			return fmt.Errorf("write %s: %w", cmd, err)
+		}
+	}
+
+	scope := "project"
+	if global {
+		scope = "global"
+	}
+	fmt.Printf("Installed /kt-create, /kt-run (%s)\n", scope)
+	return nil
+}
+
+// registerKtPermission adds "Bash(kt:*)" to Claude settings.
+func registerKtPermission(global bool) error {
+	var settingsPath string
+	if global {
+		settingsPath = filepath.Join(getClaudeConfigDir(), "settings.json")
+	} else {
+		settingsPath = ".claude/settings.local.json"
+	}
+	return registerKtPermissionAt(settingsPath, global)
 }
 
 // registerKtPermissionAt adds "Bash(kt:*)" to the specified settings file if not present.
-func registerKtPermissionAt(settingsPath string) error {
+func registerKtPermissionAt(settingsPath string, global bool) error {
 	const permission = "Bash(kt:*)"
 
 	var settings *gabs.Container
@@ -110,7 +194,12 @@ func registerKtPermissionAt(settingsPath string) error {
 		if allow := settings.Path("permissions.allow"); allow != nil {
 			for _, p := range allow.Children() {
 				if p.Data().(string) == permission {
-					return nil // Already exists
+					scope := "project"
+					if global {
+						scope = "global"
+					}
+					fmt.Printf("kt permission already registered (%s)\n", scope)
+					return nil
 				}
 			}
 			// Append to existing array
@@ -125,7 +214,7 @@ func registerKtPermissionAt(settingsPath string) error {
 		}
 	}
 
-	// Ensure .claude directory exists
+	// Ensure directory exists
 	if dir := filepath.Dir(settingsPath); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create directory: %w", err)
@@ -136,6 +225,10 @@ func registerKtPermissionAt(settingsPath string) error {
 		return fmt.Errorf("write settings: %w", err)
 	}
 
-	fmt.Println("Registered kt in .claude/settings.local.json")
+	scope := "project"
+	if global {
+		scope = "global"
+	}
+	fmt.Printf("Registered kt permission (%s)\n", scope)
 	return nil
 }
