@@ -7,20 +7,20 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kostyay/kticket/internal/config"
 	"github.com/kostyay/kticket/internal/filelock"
 	"github.com/kostyay/kticket/internal/ticket"
 )
-
-const DefaultDir = ".tickets"
 
 type Store struct {
 	Dir string
 }
 
 // New creates a new Store with the given directory.
+// If dir is empty, uses config.Dir() (respects KTICKET_DIR env var).
 func New(dir string) *Store {
 	if dir == "" {
-		dir = DefaultDir
+		dir = config.Dir()
 	}
 	return &Store{Dir: dir}
 }

@@ -15,20 +15,25 @@ var (
 	Store    *store.Store
 )
 
-// OutputMode returns "json" or "text" based on flags and TTY detection.
+// OutputMode returns "json", "plain", or "text" based on flags and TTY detection.
 func OutputMode() string {
 	if jsonFlag {
 		return "json"
 	}
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return "json" // Piped → JSON
+		return "plain" // Piped → plain text
 	}
 	return "text"
 }
 
-// IsJSON returns true if output should be JSON.
+// IsJSON returns true if output should be JSON (explicit --json flag).
 func IsJSON() bool {
 	return OutputMode() == "json"
+}
+
+// IsPlain returns true if output should be plain text (piped, no formatting).
+func IsPlain() bool {
+	return OutputMode() == "plain"
 }
 
 // PrintJSON marshals v to JSON and prints it.
@@ -46,7 +51,7 @@ func Errorf(format string, args ...any) {
 var rootCmd = &cobra.Command{
 	Use:   "kt",
 	Short: "Git-backed issue tracker",
-	Long:  `kt stores tickets as markdown files with YAML frontmatter in .tickets/`,
+	Long:  `kt stores tickets as markdown files with YAML frontmatter in .ktickets/`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		Store = store.New("")
 	},

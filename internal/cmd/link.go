@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/kostyay/kticket/internal/store"
@@ -71,7 +72,7 @@ func runLinkAdd(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			// Add lt2 to lt1's links if not already there
-			if !containsString(lt1.Ticket.Links, lt2.Ticket.ID) {
+			if !slices.Contains(lt1.Ticket.Links, lt2.Ticket.ID) {
 				lt1.Ticket.Links = append(lt1.Ticket.Links, lt2.Ticket.ID)
 			}
 		}
@@ -126,8 +127,8 @@ func runLinkRm(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remove from both directions
-	lt1.Ticket.Links = removeString(lt1.Ticket.Links, lt2.Ticket.ID)
-	lt2.Ticket.Links = removeString(lt2.Ticket.Links, lt1.Ticket.ID)
+	lt1.Ticket.Links = slices.DeleteFunc(lt1.Ticket.Links, func(s string) bool { return s == lt2.Ticket.ID })
+	lt2.Ticket.Links = slices.DeleteFunc(lt2.Ticket.Links, func(s string) bool { return s == lt1.Ticket.ID })
 
 	if err := lt1.SaveAndRelease(); err != nil {
 		lt2.Release()
@@ -145,25 +146,6 @@ func runLinkRm(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Unlinked %s and %s\n", ids[0], ids[1])
 	return nil
-}
-
-func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-func removeString(slice []string, s string) []string {
-	result := make([]string, 0, len(slice))
-	for _, item := range slice {
-		if item != s {
-			result = append(result, item)
-		}
-	}
-	return result
 }
 
 // Ready command - list tickets with all deps resolved
@@ -205,6 +187,13 @@ func runReady(cmd *cobra.Command, args []string) error {
 		return PrintJSON(ready)
 	}
 
+	if IsPlain() {
+		for _, t := range ready {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
+	}
+
 	for _, t := range ready {
 		fmt.Printf("%-12s [%-11s] %s\n", t.ID, t.Status, truncate(t.Title, 50))
 	}
@@ -230,6 +219,13 @@ func runBlocked(cmd *cobra.Command, args []string) error {
 
 	if IsJSON() {
 		return PrintJSON(blocked)
+	}
+
+	if IsPlain() {
+		for _, t := range blocked {
+			fmt.Printf("%s [%s] %s\n", t.ID, t.Status, t.Title)
+		}
+		return nil
 	}
 
 	for _, t := range blocked {

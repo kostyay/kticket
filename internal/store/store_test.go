@@ -48,7 +48,7 @@ func TestGenerateID(t *testing.T) {
 
 func setupTestStore(t *testing.T) *Store {
 	dir := t.TempDir()
-	ticketsDir := filepath.Join(dir, ".tickets")
+	ticketsDir := filepath.Join(dir, ".ktickets")
 	return New(ticketsDir)
 }
 
@@ -68,7 +68,7 @@ func createTestTicket(s *Store, id, title string, status ticket.Status) *ticket.
 
 func TestStoreEnsureDir(t *testing.T) {
 	dir := t.TempDir()
-	ticketsDir := filepath.Join(dir, "nested", ".tickets")
+	ticketsDir := filepath.Join(dir, "nested", ".ktickets")
 	s := New(ticketsDir)
 
 	err := s.EnsureDir()

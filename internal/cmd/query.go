@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +21,5 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(tickets)
+	return PrintJSON(tickets)
 }
