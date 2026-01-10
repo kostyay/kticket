@@ -14,6 +14,9 @@ Set `KTICKET_DIR` environment variable to override the storage directory.
 
 ```sh
 go install github.com/kostyay/kticket/cmd/kt@latest
+
+# First-time setup: generates kt.md, prompts to update .claude/settings.local.json
+kt install
 ```
 
 ## AI Agent Setup
@@ -27,6 +30,14 @@ Add to your project's `CLAUDE.md`:
 - Start work: `kt ready` → pick top, execute, update status
 - Creating: break features into testable chunks (`kt create "title" -d "description" --parent <epic-id>`)
 ```
+
+### Prompting Example
+
+```
+@kt.md create an epic and bite-sized tasks for this plan
+```
+
+The generated `kt.md` provides a compact reference for agents to understand ticket operations without bloating context.
 
 ## Quick Start
 

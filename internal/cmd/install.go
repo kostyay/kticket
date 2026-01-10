@@ -39,15 +39,12 @@ var installCmd = &cobra.Command{
 			return fmt.Errorf("get working directory: %w", err)
 		}
 
+		reader := bufio.NewReader(os.Stdin)
 		path := filepath.Join(cwd, "kt.md")
 
 		// Check if file exists
 		if _, err := os.Stat(path); err == nil {
-			fmt.Print("kt.md already exists. Regenerate? [y/N] ")
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
+			if !promptYesNo(reader, "kt.md already exists. Regenerate?") {
 				fmt.Println("Aborted")
 				return nil
 			}
@@ -59,9 +56,11 @@ var installCmd = &cobra.Command{
 
 		fmt.Println("Created kt.md")
 
-		// Register kt permission in Claude settings
-		if err := registerKtPermission(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		// Ask to register kt permission in Claude settings
+		if promptYesNo(reader, "Add kt permission to .claude/settings.local.json? (allows Claude to run kt commands without prompting)") {
+			if err := registerKtPermission(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+			}
 		}
 
 		return nil
@@ -70,6 +69,14 @@ var installCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(installCmd)
+}
+
+// promptYesNo asks a yes/no question and returns true if user answers yes.
+func promptYesNo(reader *bufio.Reader, prompt string) bool {
+	fmt.Print(prompt + " [y/N] ")
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "y" || answer == "yes"
 }
 
 // registerKtPermission adds "Bash(kt:*)" to .claude/settings.local.json if not present.
