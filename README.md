@@ -15,9 +15,13 @@ Set `KTICKET_DIR` environment variable to override the storage directory.
 ```sh
 go install github.com/kostyay/kticket/cmd/kt@latest
 
-# First-time setup: generates kt.md, prompts to update .claude/settings.local.json
+# First-time setup: generates kt.md, installs slash commands, configures permissions
 kt install
 ```
+
+The installer prompts for:
+- **Slash commands**: `/kt-create`, `/kt-run` (global or project scope)
+- **kt permission**: Allows Claude to run kt commands without prompting
 
 ## AI Agent Setup
 
@@ -30,6 +34,13 @@ Add to your project's `CLAUDE.md`:
 - Start work: `kt ready` → pick top, execute, update status
 - Creating: break features into testable chunks (`kt create "title" -d "description" --parent <epic-id>`)
 ```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/kt-create` | Create epic and tasks from a plan |
+| `/kt-run` | Work through tasks: ready → start → implement → close |
 
 ### Prompting Example
 
