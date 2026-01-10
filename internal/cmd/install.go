@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Jeffail/gabs/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -114,45 +114,53 @@ func registerKtPermission() error {
 
 // registerKtPermissionAt adds "Bash(kt:*)" to the specified settings file if not present.
 func registerKtPermissionAt(settingsPath string) error {
+	const permission = "Bash(kt:*)"
+
+	var settings *gabs.Container
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // File doesn't exist - skip
+			// Create new settings with permission
+			settings = gabs.New()
+			if _, err := settings.SetP([]string{permission}, "permissions.allow"); err != nil {
+				return fmt.Errorf("set permission: %w", err)
+			}
+		} else {
+			return fmt.Errorf("read settings: %w", err)
 		}
-		return fmt.Errorf("read settings: %w", err)
-	}
+	} else {
+		settings, err = gabs.ParseJSON(data)
+		if err != nil {
+			return fmt.Errorf("parse settings: %w", err)
+		}
 
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return fmt.Errorf("parse settings: %w", err)
-	}
-
-	perms, ok := settings["permissions"].(map[string]any)
-	if !ok {
-		return nil // No permissions section
-	}
-	allowRaw, ok := perms["allow"].([]any)
-	if !ok {
-		return nil // No allow array
-	}
-
-	// Check if already registered
-	permission := "Bash(kt:*)"
-	for _, p := range allowRaw {
-		if s, ok := p.(string); ok && s == permission {
-			return nil // Already exists
+		// Check if already registered
+		if allow := settings.Path("permissions.allow"); allow != nil {
+			for _, p := range allow.Children() {
+				if p.Data().(string) == permission {
+					return nil // Already exists
+				}
+			}
+			// Append to existing array
+			if err := settings.ArrayAppendP(permission, "permissions.allow"); err != nil {
+				return fmt.Errorf("append permission: %w", err)
+			}
+		} else {
+			// Create permissions.allow with our permission
+			if _, err := settings.SetP([]string{permission}, "permissions.allow"); err != nil {
+				return fmt.Errorf("set permission: %w", err)
+			}
 		}
 	}
 
-	// Append permission
-	perms["allow"] = append(allowRaw, permission)
-
-	out, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal settings: %w", err)
+	// Ensure .claude directory exists
+	if dir := filepath.Dir(settingsPath); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("create directory: %w", err)
+		}
 	}
 
-	if err := os.WriteFile(settingsPath, append(out, '\n'), 0644); err != nil {
+	if err := os.WriteFile(settingsPath, settings.BytesIndent("", "  "), 0644); err != nil {
 		return fmt.Errorf("write settings: %w", err)
 	}
 

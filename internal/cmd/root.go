@@ -51,7 +51,7 @@ func Errorf(format string, args ...any) {
 var rootCmd = &cobra.Command{
 	Use:   "kt",
 	Short: "Git-backed issue tracker",
-	Long:  `kt stores tickets as markdown files with YAML frontmatter in .kticket/`,
+	Long:  `kt stores tickets as markdown files with YAML frontmatter in .ktickets/`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		Store = store.New("")
 	},

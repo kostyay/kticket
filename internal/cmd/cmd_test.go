@@ -1324,7 +1324,16 @@ func TestRegisterKtPermission_FileNotExist(t *testing.T) {
 	path := dir + "/nonexistent.json"
 
 	err := registerKtPermissionAt(path)
-	require.NoError(t, err) // Should skip if file doesn't exist
+	require.NoError(t, err)
+
+	// File should be created with permission
+	result, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(result, &parsed))
+	perms := parsed["permissions"].(map[string]any)
+	allow := perms["allow"].([]any)
+	assert.Contains(t, allow, "Bash(kt:*)")
 }
 
 func TestRegisterKtPermission_InvalidJSON(t *testing.T) {
@@ -1337,6 +1346,23 @@ func TestRegisterKtPermission_InvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse settings")
 }
 
+func TestRegisterKtPermission_CreatesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.claude/settings.local.json"
+
+	err := registerKtPermissionAt(path)
+	require.NoError(t, err)
+
+	// Directory and file should be created
+	result, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(result, &parsed))
+	perms := parsed["permissions"].(map[string]any)
+	allow := perms["allow"].([]any)
+	assert.Contains(t, allow, "Bash(kt:*)")
+}
+
 func TestRegisterKtPermission_NoPermissionsSection(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/settings.json"
@@ -1344,11 +1370,16 @@ func TestRegisterKtPermission_NoPermissionsSection(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
 	err := registerKtPermissionAt(path)
-	require.NoError(t, err) // Should skip if no permissions section
+	require.NoError(t, err)
 
-	// File should be unchanged
+	// File should have permissions.allow created
 	result, _ := os.ReadFile(path)
-	assert.JSONEq(t, data, string(result))
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(result, &parsed))
+	assert.Equal(t, "value", parsed["other"])
+	perms := parsed["permissions"].(map[string]any)
+	allow := perms["allow"].([]any)
+	assert.Contains(t, allow, "Bash(kt:*)")
 }
 
 func TestRegisterKtPermission_NoAllowArray(t *testing.T) {
@@ -1358,11 +1389,17 @@ func TestRegisterKtPermission_NoAllowArray(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
 
 	err := registerKtPermissionAt(path)
-	require.NoError(t, err) // Should skip if no allow array
+	require.NoError(t, err)
 
-	// File should be unchanged
+	// File should have allow array created
 	result, _ := os.ReadFile(path)
-	assert.JSONEq(t, data, string(result))
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(result, &parsed))
+	perms := parsed["permissions"].(map[string]any)
+	allow := perms["allow"].([]any)
+	deny := perms["deny"].([]any)
+	assert.Contains(t, allow, "Bash(kt:*)")
+	assert.Contains(t, deny, "something")
 }
 
 func TestRegisterKtPermission_AlreadyExists(t *testing.T) {

@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"time"
 )
-
-var separatorRe = regexp.MustCompile(`[-_]`)
 
 // GenerateID creates a unique ticket ID based on the current directory name.
 func GenerateID() (string, error) {
@@ -32,7 +30,9 @@ func GenerateID() (string, error) {
 // extractPrefix derives a short prefix from a directory/project name.
 func extractPrefix(name string) string {
 	// Split on - or _
-	parts := separatorRe.Split(name, -1)
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_'
+	})
 	if len(parts) == 1 {
 		// No separators: use first 1-3 chars
 		if len(name) > 3 {

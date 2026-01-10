@@ -2,7 +2,9 @@
 
 Git-backed issue tracker for AI agents.
 
-Stores tickets as markdown files with YAML frontmatter in `.tickets/`. Designed for AI agents to easily search and manipulate without dumping large JSON blobs into context windows.
+Stores tickets as markdown files with YAML frontmatter in `.kticket/`. Designed for AI agents to easily search and manipulate without dumping large JSON blobs into context windows.
+
+Set `KTICKET_DIR` environment variable to override the storage directory.
 
 ## Install
 
@@ -120,7 +122,7 @@ kt close abc1  # Success
 
 ## Storage Format
 
-Files stored in `.tickets/<id>.md`:
+Files stored in `.kticket/<id>.md`:
 
 ```markdown
 ---

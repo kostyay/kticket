@@ -3,6 +3,7 @@ module github.com/kostyay/kticket
 go 1.25.5
 
 require (
+	github.com/Jeffail/gabs/v2 v2.7.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gofrs/flock v0.13.0
 	github.com/spf13/cobra v1.10.2

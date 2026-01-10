@@ -124,3 +124,11 @@ func (l *Lock) Path() string {
 	}
 	return l.flock.Path()
 }
+
+// IsShared returns true if this is a shared (read) lock.
+func (l *Lock) IsShared() bool {
+	if l == nil {
+		return false
+	}
+	return l.shared
+}

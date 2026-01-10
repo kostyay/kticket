@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/kostyay/kticket/internal/ticket"
 	"github.com/spf13/cobra"
@@ -149,10 +150,7 @@ func runAddNote(cmd *cobra.Command, args []string) error {
 	}
 
 	// Add timestamp and append
-	timestamp := cmd.Context().Value("now")
-	if timestamp == nil {
-		timestamp = "now"
-	}
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 	if t.Notes != "" {
 		t.Notes += "\n\n"
 	}
