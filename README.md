@@ -20,7 +20,7 @@ kt install
 ```
 
 The installer prompts for:
-- **Slash commands**: `/kt-create`, `/kt-run` (global or project scope)
+- **Slash commands**: `/kt-create`, `/kt-run`, `/kt-run-all` (global or project scope)
 - **kt permission**: Allows Claude to run kt commands without prompting
 
 ## AI Agent Setup
@@ -41,6 +41,7 @@ Add to your project's `CLAUDE.md`:
 |---------|-------------|
 | `/kt-create` | Create epic and tasks from a plan |
 | `/kt-run` | Work through tasks: ready → start → implement → close |
+| `/kt-run-all` | Process ALL tasks until none remain |
 
 ### Prompting Example
 

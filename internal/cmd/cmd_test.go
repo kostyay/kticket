@@ -1515,6 +1515,8 @@ func TestInstallSlashCommands_Project(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = os.Stat(filepath.Join(dir, ".claude/commands/kt-run.md"))
 	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, ".claude/commands/kt-run-all.md"))
+	assert.NoError(t, err)
 
 	// Check content
 	content, _ := os.ReadFile(filepath.Join(dir, ".claude/commands/kt-create.md"))
@@ -1533,6 +1535,8 @@ func TestInstallSlashCommands_Global(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, "commands/kt-create.md"))
 	assert.NoError(t, err)
 	_, err = os.Stat(filepath.Join(dir, "commands/kt-run.md"))
+	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, "commands/kt-run-all.md"))
 	assert.NoError(t, err)
 }
 
