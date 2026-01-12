@@ -1,0 +1,273 @@
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/kostyay/kticket/internal/ticket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPurgeBasic(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	open := mkTicket(t, "kt-001", "Open Task", ticket.StatusOpen)
+	closed1 := mkTicket(t, "kt-002", "Closed Task 1", ticket.StatusClosed)
+	closed2 := mkTicket(t, "kt-003", "Closed Task 2", ticket.StatusClosed)
+
+	mockStdin(t, "y\n")
+
+	err := runPurge(nil, nil)
+	require.NoError(t, err)
+
+	files, _ := filepath.Glob(filepath.Join(Store.Dir, "*.md"))
+	assert.Len(t, files, 1)
+
+	_, err = Store.Get(open.ID)
+	assert.NoError(t, err)
+
+	_, err = Store.Get(closed1.ID)
+	assert.Error(t, err)
+	_, err = Store.Get(closed2.ID)
+	assert.Error(t, err)
+}
+
+func TestPurgeNoClosedTickets(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	mkTicket(t, "kt-001", "Open Task 1", ticket.StatusOpen)
+	mkTicket(t, "kt-002", "Open Task 2", ticket.StatusOpen)
+
+	err := runPurge(nil, nil)
+	require.NoError(t, err)
+
+	// Verify all tickets still exist
+	files, _ := filepath.Glob(filepath.Join(Store.Dir, "*.md"))
+	assert.Len(t, files, 2)
+}
+
+func TestPurgeBlockedByParent(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	parent := mkTicket(t, "kt-parent", "Parent Epic", ticket.StatusClosed)
+	child := mkTicket(t, "kt-child", "Child Task", ticket.StatusOpen)
+
+	child.Parent = parent.ID
+	require.NoError(t, Store.Save(child))
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot purge")
+	assert.Contains(t, err.Error(), parent.ID)
+	assert.Contains(t, err.Error(), "parent")
+
+	_, err = Store.Get(parent.ID)
+	assert.NoError(t, err)
+}
+
+func TestPurgeBlockedByDep(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	dep := mkTicket(t, "kt-dep", "Dependency", ticket.StatusClosed)
+	task := mkTicket(t, "kt-task", "Task", ticket.StatusOpen)
+
+	task.Deps = []string{dep.ID}
+	require.NoError(t, Store.Save(task))
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot purge")
+	assert.Contains(t, err.Error(), dep.ID)
+	assert.Contains(t, err.Error(), "depends")
+
+	_, err = Store.Get(dep.ID)
+	assert.NoError(t, err)
+}
+
+func TestPurgeBlockedByLink(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	linked := mkTicket(t, "kt-linked", "Linked", ticket.StatusClosed)
+	task := mkTicket(t, "kt-task", "Task", ticket.StatusOpen)
+
+	task.Links = []string{linked.ID}
+	require.NoError(t, Store.Save(task))
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot purge")
+	assert.Contains(t, err.Error(), linked.ID)
+	assert.Contains(t, err.Error(), "links")
+
+	_, err = Store.Get(linked.ID)
+	assert.NoError(t, err)
+}
+
+func TestPurgeUserCancels(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	closed := mkTicket(t, "kt-001", "Closed Task", ticket.StatusClosed)
+
+	mockStdin(t, "n\n")
+
+	err := runPurge(nil, nil)
+	require.NoError(t, err)
+
+	_, err = Store.Get(closed.ID)
+	assert.NoError(t, err)
+
+	files, _ := filepath.Glob(filepath.Join(Store.Dir, "*.md"))
+	assert.Len(t, files, 1)
+}
+
+func TestPurgeJSONMode(t *testing.T) {
+	defer setupTestEnv(t)()
+	jsonFlag = true
+	defer func() { jsonFlag = false }()
+
+	mkTicket(t, "kt-001", "Closed Task", ticket.StatusClosed)
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to purge in JSON mode")
+
+	files, _ := filepath.Glob(filepath.Join(Store.Dir, "*.md"))
+	assert.Len(t, files, 1)
+}
+
+func TestPurgeJSONModeNoClosed(t *testing.T) {
+	defer setupTestEnv(t)()
+	jsonFlag = true
+	defer func() { jsonFlag = false }()
+
+	mkTicket(t, "kt-001", "Open Task", ticket.StatusOpen)
+
+	err := runPurge(nil, nil)
+	require.NoError(t, err)
+}
+
+func TestValidatePurge(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	closed1 := mkTicket(t, "kt-closed1", "Closed 1", ticket.StatusClosed)
+	closed2 := mkTicket(t, "kt-closed2", "Closed 2", ticket.StatusClosed)
+	open1 := mkTicket(t, "kt-open1", "Open 1", ticket.StatusOpen)
+	open2 := mkTicket(t, "kt-open2", "Open 2", ticket.StatusOpen)
+
+	allTickets := []*ticket.Ticket{closed1, closed2, open1, open2}
+	closedTickets := []*ticket.Ticket{closed1, closed2}
+
+	err := validatePurge(allTickets, closedTickets)
+	assert.NoError(t, err)
+
+	open1.Parent = closed1.ID
+	err = validatePurge(allTickets, closedTickets)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), closed1.ID)
+	assert.Contains(t, err.Error(), "parent")
+
+	open1.Parent = ""
+	open1.Deps = []string{closed2.ID}
+	err = validatePurge(allTickets, closedTickets)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), closed2.ID)
+	assert.Contains(t, err.Error(), "depends")
+
+	open1.Deps = nil
+	open2.Links = []string{closed1.ID}
+	err = validatePurge(allTickets, closedTickets)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), closed1.ID)
+	assert.Contains(t, err.Error(), "links")
+}
+
+func TestPromptConfirmation(t *testing.T) {
+	tickets := []*ticket.Ticket{
+		{ID: "kt-001", Status: ticket.StatusClosed, Title: "First Closed"},
+		{ID: "kt-002", Status: ticket.StatusClosed, Title: "Second Closed"},
+	}
+
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"y\n", true},
+		{"yes\n", true},
+		{"n\n", false},
+		{"no\n", false},
+		{"\n", false},
+	}
+
+	for _, tc := range tests {
+		mockStdin(t, tc.input)
+		confirmed, err := promptConfirmation(tickets)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, confirmed)
+	}
+}
+
+func TestPurgeMultipleReferences(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	closed := mkTicket(t, "kt-closed", "Closed", ticket.StatusClosed)
+	open1 := mkTicket(t, "kt-open1", "Open 1", ticket.StatusOpen)
+	open2 := mkTicket(t, "kt-open2", "Open 2", ticket.StatusOpen)
+
+	open1.Deps = []string{closed.ID}
+	open2.Links = []string{closed.ID}
+	require.NoError(t, Store.Save(open1))
+	require.NoError(t, Store.Save(open2))
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot purge")
+}
+
+func TestPurgeOnlyClosedReferences(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	closed1 := mkTicket(t, "kt-closed1", "Closed 1", ticket.StatusClosed)
+	closed2 := mkTicket(t, "kt-closed2", "Closed 2", ticket.StatusClosed)
+
+	closed1.Deps = []string{closed2.ID}
+	closed2.Links = []string{closed1.ID}
+	require.NoError(t, Store.Save(closed1))
+	require.NoError(t, Store.Save(closed2))
+
+	mockStdin(t, "y\n")
+
+	err := runPurge(nil, nil)
+	require.NoError(t, err)
+
+	files, _ := filepath.Glob(filepath.Join(Store.Dir, "*.md"))
+	assert.Len(t, files, 0)
+}
+
+func TestPurgeInProgressReferences(t *testing.T) {
+	defer setupTestEnv(t)()
+
+	closed := mkTicket(t, "kt-closed", "Closed", ticket.StatusClosed)
+	inProgress := mkTicket(t, "kt-progress", "In Progress", ticket.StatusInProgress)
+
+	inProgress.Deps = []string{closed.ID}
+	require.NoError(t, Store.Save(inProgress))
+
+	err := runPurge(nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot purge")
+}
+
+func mockStdin(t *testing.T, input string) {
+	t.Helper()
+	oldStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = oldStdin })
+
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	go func() {
+		defer w.Close()
+		w.Write([]byte(input))
+	}()
+}
