@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
 
 const (
 	// DefaultDir is the default directory for storing tickets.
@@ -11,10 +15,16 @@ const (
 )
 
 // Dir returns the tickets directory.
-// Checks KTICKET_DIR env var first, falls back to DefaultDir.
+// Checks KTICKET_DIR env var first, then resolves relative to git root,
+// falls back to DefaultDir in cwd if not in a git repo.
 func Dir() string {
 	if dir := os.Getenv(EnvDir); dir != "" {
 		return dir
 	}
-	return DefaultDir
+	gitRoot, err := FindGitRoot()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v; using ./%s\n", err, DefaultDir)
+		return DefaultDir
+	}
+	return filepath.Join(gitRoot, DefaultDir)
 }
