@@ -7,17 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kostyay/kticket/internal/config"
 )
 
-// GenerateID creates a unique ticket ID based on the current directory name.
+// GenerateID creates a unique ticket ID based on the git root directory name.
+// Falls back to cwd name if not in a git repo.
 func GenerateID() (string, error) {
-	cwd, err := os.Getwd()
+	dir, err := projectDirName()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Base(cwd)
 
-	// Extract prefix from directory name
 	prefix := extractPrefix(dir)
 
 	// 4-char hash from PID + timestamp
@@ -27,25 +28,35 @@ func GenerateID() (string, error) {
 	return fmt.Sprintf("%s-%s", prefix, hash), nil
 }
 
+// projectDirName returns the base name of the git root, or cwd as fallback.
+func projectDirName() (string, error) {
+	gitRoot, err := config.FindGitRoot()
+	if err == nil {
+		return filepath.Base(gitRoot), nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(cwd), nil
+}
+
 // extractPrefix derives a short prefix from a directory/project name.
 func extractPrefix(name string) string {
-	// Split on - or _
 	parts := strings.FieldsFunc(name, func(r rune) bool {
 		return r == '-' || r == '_'
 	})
 	if len(parts) == 1 {
-		// No separators: use first 1-3 chars
 		if len(name) > 3 {
 			return name[:3]
 		}
 		return name
 	}
-	// First letter of each part
-	var prefix string
+	var b strings.Builder
 	for _, p := range parts {
 		if len(p) > 0 {
-			prefix += string(p[0])
+			b.WriteByte(p[0])
 		}
 	}
-	return prefix
+	return b.String()
 }
