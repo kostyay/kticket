@@ -1,5 +1,13 @@
 .PHONY: all fmt lint test build clean security install
 
+VERSION := $(shell git describe --tags --always --dirty)
+COMMIT  := $(shell git rev-parse --short HEAD)
+DATE    := $(shell date -u +%FT%TZ)
+LDFLAGS := -s -w \
+  -X 'github.com/kostyay/kticket/internal/version.Version=$(VERSION)' \
+  -X 'github.com/kostyay/kticket/internal/version.Commit=$(COMMIT)' \
+  -X 'github.com/kostyay/kticket/internal/version.Date=$(DATE)'
+
 all: lint test build
 
 fmt:
@@ -12,7 +20,7 @@ test:
 	go test -race -coverprofile=coverage.out ./...
 
 build:
-	go build -o kt ./cmd/kt
+	go build -ldflags "$(LDFLAGS)" -o kt ./cmd/kt
 
 clean:
 	rm -f kt coverage.out
