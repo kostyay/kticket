@@ -45,9 +45,10 @@ func TestRunWait_BecomesClosedDuringPoll(t *testing.T) {
 
 	tk := mkTicket(t, "kt-wait", "Waiting", ticket.StatusInProgress)
 
+	s := Store
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		lt, err := Store.GetForUpdate(tk.ID)
+		lt, err := s.GetForUpdate(tk.ID)
 		if err != nil {
 			return
 		}
@@ -100,9 +101,10 @@ func TestRunWait_TicketDeletedDuringPoll(t *testing.T) {
 
 	tk := mkTicket(t, "kt-del", "Deleted", ticket.StatusOpen)
 
+	s := Store
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		_ = Store.Delete(tk.ID)
+		_ = s.Delete(tk.ID)
 	}()
 
 	err := runWaitWithClock(
