@@ -51,4 +51,4 @@ release: lint test
 	echo "$$LATEST_TAG -> $$NEW_TAG"; \
 	git tag "$$NEW_TAG"; \
 	git push origin "$$NEW_TAG"; \
-	goreleaser release --clean
+	GITHUB_TOKEN=$$(gh auth token) goreleaser release --clean
