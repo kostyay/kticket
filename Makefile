@@ -1,4 +1,4 @@
-.PHONY: all fmt lint test build clean security install
+.PHONY: all fmt lint test build clean security install release
 
 VERSION := $(shell git describe --tags --always --dirty)
 COMMIT  := $(shell git rev-parse --short HEAD)
@@ -34,3 +34,21 @@ security:
 install: build
 	@echo "Installing kt to /usr/local/bin/kt (run with sudo if needed)"
 	ln -sf $(CURDIR)/kt /usr/local/bin/kt
+
+release: lint test
+	@set -e; \
+	git fetch --tags; \
+	LATEST_TAG=$$(git tag -l 'v*' --sort=-v:refname | sed -n '1p'); \
+	if [ -z "$$LATEST_TAG" ]; then LATEST_TAG="v0.0.0"; fi; \
+	MAJOR=$$(echo "$$LATEST_TAG" | sed 's/^v//' | cut -d. -f1); \
+	MINOR=$$(echo "$$LATEST_TAG" | sed 's/^v//' | cut -d. -f2); \
+	PATCH=$$(echo "$$LATEST_TAG" | sed 's/^v//' | cut -d. -f3); \
+	if [ "$$LATEST_TAG" = "v0.0.0" ]; then \
+		NEW_TAG="v0.1.0"; \
+	else \
+		NEW_TAG="v$${MAJOR}.$${MINOR}.$$((PATCH + 1))"; \
+	fi; \
+	echo "$$LATEST_TAG -> $$NEW_TAG"; \
+	git tag "$$NEW_TAG"; \
+	git push origin "$$NEW_TAG"; \
+	goreleaser release --clean
